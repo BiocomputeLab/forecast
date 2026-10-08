@@ -1,0 +1,12 @@
+# Build output
+/target/
+
+# Simulation / inference output (default --out-path)
+/out/
+
+# Editor and OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~

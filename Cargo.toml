@@ -1,0 +1,20 @@
+[package]
+name = "forecast"
+version = "0.1.0"
+edition = "2021"
+description = "Simulation and inference of construct expression levels and variation from Flow-seq (MPRA) data"
+license = "MIT"
+
+[dependencies]
+argmin = "0.11.0"
+argmin-math = "0.5.1"
+csv = "1.4.0"
+indicatif = "0.18.6"
+rand = "0.8"
+rand_distr = "0.4"
+statrs = "0.19.1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
