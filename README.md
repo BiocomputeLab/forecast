@@ -63,7 +63,7 @@ You need a recent [Rust toolchain](https://rustup.rs).
 cargo build --release          # binary: target/release/forecast
 cargo test --release           # optional: run the test suite
 ```
-
+ 
 Copy `target/release/forecast` anywhere on your `PATH`, or run it from there. The examples below
 assume it is called `forecast`.
 
