@@ -331,7 +331,7 @@ fn run_simulate(argv: &[String]) -> Result<(), String> {
     let result = result?;
 
     let bins = result.bins;
-    let bin_names: Vec<String> = (0..bins).map(|j| format!("bin_{j}")).collect();
+    let bin_names: Vec<String> = (0..bins).map(|j| format!("bin_{}", j + 1)).collect();
     let header = std::iter::once("ID".to_string()).chain(bin_names.iter().cloned());
     let body = result.sequencing.chunks(bins).enumerate().map(|(i, row)| {
         std::iter::once(i.to_string()).chain(row.iter().map(u64::to_string)).collect::<Vec<_>>()
@@ -408,17 +408,44 @@ fn run_infer(argv: &[String]) -> Result<(), String> {
 
     let sq_path = data.join("sequencing.csv");
     let sq = read_table(&sq_path)?;
+    // With a header, columns are found by name, in any order: the ID from the column named ID
+    // (falling back to the first column) and the counts from bin_1..bin_N (N = number of bins in
+    // cells_bins.csv); any other columns are ignored.
+    // Without a header the file must be counts only, one column per bin.
     let has_ids = sq.header.is_some();
-    let skip = usize::from(has_ids);
+    let cols: Vec<usize> = match &sq.header {
+        Some(h) if h.iter().any(|c| *c == format!("bin_{}", bins + 1)) => {
+            return Err(format!(
+                "{}: has more bin columns than the {bins} in cells_bins.csv (found bin_{})",
+                sq_path.display(),
+                bins + 1
+            ))
+        }
+        Some(h) => (1..=bins)
+            .map(|k| {
+                let name = format!("bin_{k}");
+                h.iter().position(|c| *c == name).ok_or_else(|| {
+                    format!(
+                        "{}: no column '{name}' in the header; expected an ID column plus columns bin_1..bin_{bins}",
+                        sq_path.display()
+                    )
+                })
+            })
+            .collect::<Result<_, _>>()?,
+        None => (0..bins).collect(),
+    };
+    let id_col = sq.header.as_ref().and_then(|h| h.iter().position(|c| c == "ID")).unwrap_or(0);
+    let needed = cols.iter().copied().chain([id_col]).max().map_or(0, |m| m + 1);
     let mut ids = Vec::with_capacity(sq.rows.len());
     let mut seq = Vec::with_capacity(sq.rows.len() * bins);
     for (r, row) in sq.rows.iter().enumerate() {
-        if row.len() != bins + skip {
-            return Err(format!("{}: row {} has {} columns, expected {}", sq_path.display(), r + 1, row.len(), bins + skip));
+        if row.len() < needed || (!has_ids && row.len() != bins) {
+            let expected = if has_ids { format!("at least {needed}") } else { bins.to_string() };
+            return Err(format!("{}: row {} has {} columns, expected {expected}", sq_path.display(), r + 1, row.len()));
         }
-        ids.push(if has_ids { row[0].clone() } else { r.to_string() });
-        for x in &row[skip..] {
-            let v = parse_f64(x, &sq_path)?;
+        ids.push(if has_ids { row[id_col].clone() } else { r.to_string() });
+        for &c in &cols {
+            let v = parse_f64(&row[c], &sq_path)?;
             if !v.is_finite() || v < 0.0 {
                 return Err(format!("{}: row {}: read counts must be finite and non-negative", sq_path.display(), r + 1));
             }

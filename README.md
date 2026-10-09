@@ -93,7 +93,7 @@ This writes three files to `out/sim`. `sequencing.csv` holds the read counts per
 bin, and `cells_bins.csv` the cells sorted per bin:
 
 ```
-ID,bin_0,bin_1,bin_2,bin_3,bin_4,bin_5,bin_6,bin_7
+ID,bin_1,bin_2,bin_3,bin_4,bin_5,bin_6,bin_7,bin_8
 0,233,8777,1052,0,0,0,0,0
 1,18,7265,2091,0,0,0,0,0
 2,0,0,0,22,8186,1488,0,0
@@ -156,7 +156,7 @@ from the data, so only `--f-max` is needed.
 - `inf` is accepted for the last upper bound only: `0:10,10:100,100:inf`.
 - **A finite last bound is allowed**, e.g. `0:10,10:100,100:1000`. This models a hard ceiling:
   cells brighter than 1000 are discarded, and inference accounts for that truncation.
-- The number of ranges must equal the number of columns in `sequencing.csv`.
+- The number of ranges must equal the number of bins (`bin_1`..`bin_N` columns in `sequencing.csv`).
 
 For the `lognormal` model, bounds are still given in fluorescence units; `forecast` converts them
 to log space internally.
@@ -254,9 +254,11 @@ result folder is self-contained.
 
 To analyse a real experiment you need two files in one folder, plus the bin definition:
 
-1. **`sequencing.csv`**: read counts for each construct (rows) in each sorted bin (columns).
+1. **`sequencing.csv`**: read counts for each construct (rows) in each sorted bin (columns
+   `bin_1`..`bin_N`; other columns are ignored).
 2. **`cells_bins.csv`**: the number of cells the FACS sorted into each bin (the sorter's event
-   counts), in the same bin order as the columns above.
+   counts), in the same bin order as the columns above (see the
+   [`cells_bins.csv` format](#cells_binscsv-infer-input-simulate-output)).
 3. The **fluorescence range of each bin**, from your gating, passed as `--upper-bounds` or
    `--bin-ranges`. Order bins from lowest to highest fluorescence.
 
@@ -299,31 +301,45 @@ ignored; rows with missing, non-numeric, non-finite or non-positive parameters a
 
 ### `sequencing.csv` (infer input, simulate output)
 
-Read counts per construct (rows) and bin (columns). The first row is a header and the first
-column is the construct ID (any text, no commas):
+Read counts per construct (rows) and bin (columns). The first row is a header and a column
+named `ID` holds the construct ID (any text, no commas; if there is no `ID` column the first
+column is used). Bins are numbered **from 1** and the count
+columns must be named `bin_1`, `bin_2`, ... `bin_N`, lowest to highest fluorescence:
 
 ```csv
-ID,bin_0,bin_1,bin_2
+ID,bin_1,bin_2,bin_3
 construct_a,0,12,40
 construct_b,3,25,0
 ```
 
-- A file with **no header** (all-numeric, counts only) is also accepted; constructs are then
-  identified by their row number starting at 0.
-- Every row must have exactly as many count columns as there are bins in `cells_bins.csv`.
+- `N` is the number of bins in `cells_bins.csv`. The counts are looked up **by column name**, so
+  **any additional columns** (annotations, other samples, totals...) and any column order are
+  fine: everything except the `ID` column and `bin_1`..`bin_N` is ignored.
+- A missing `bin_k` column, or a `bin_{N+1}` column when `cells_bins.csv` has `N` values, is an
+  error.
+- A file with **no header** (all-numeric, counts only) is also accepted; it must then contain
+  exactly one column per bin in bin order, and constructs are identified by their row number
+  starting at 0.
 - Counts must be finite and non-negative. Fractional counts are truncated to whole numbers.
 
 ### `cells_bins.csv` (infer input, simulate output)
 
-One row with the number of cells sorted into each bin, in the same order as the columns of
-`sequencing.csv`. A header row is optional (a leading `#` is tolerated, as written by numpy).
+One row with the number of cells sorted into each bin, in the same order as the bins in
+`sequencing.csv` (`bin_1` first). The number of values sets the number of bins. A header row is
+optional (a leading `#` is tolerated, as written by numpy); the header names are not used.
 
 ```csv
-bin_0,bin_1,bin_2
+bin_1,bin_2,bin_3
 100000,250000,180000
 ```
 
-Values must be finite and non-negative.
+Or equivalently, without a header:
+
+```csv
+100000,250000,180000
+```
+
+Values must be finite and non-negative, with exactly one value per bin (no extra columns).
 
 ## Output files and how to read them
 
@@ -366,7 +382,7 @@ appropriate; values are rounded to 3 decimals.
 ## Tips and troubleshooting
 
 - **"N bin ranges given but the data has M bins"**: the bin option passed to `infer` doesn't
-  match the number of columns in `sequencing.csv`. With `--upper-bounds`, N values mean N+1 bins.
+  match the number of bins (values in `cells_bins.csv`). With `--upper-bounds`, N values mean N+1 bins.
 - **"bin ranges ... overlaps or precedes ..."**: bins must be listed from lowest to highest and
   must not overlap.
 - **Many grade 2 or 3 results**: the data is too coarse or clipped. More bins, wider coverage of

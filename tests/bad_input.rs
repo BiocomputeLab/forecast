@@ -35,8 +35,8 @@ fn data_dir(name: &str, cells: &str, seq: &str) -> PathBuf {
     d
 }
 
-const CELLS: &str = "bin_0,bin_1,bin_2\n100,200,300\n";
-const SEQ: &str = "ID,bin_0,bin_1,bin_2\nc0,5,10,15\nc1,1,2,3\n";
+const CELLS: &str = "bin_1,bin_2,bin_3\n100,200,300\n";
+const SEQ: &str = "ID,bin_1,bin_2,bin_3\nc0,5,10,15\nc1,1,2,3\n";
 
 fn infer_args<'a>(d: &'a Path, out: &'a Path, extra: &[&'a str]) -> Vec<&'a str> {
     let mut v = vec!["infer", "--data", p(d), "--out-path", p(out), "--f-max", "1000"];
@@ -131,13 +131,13 @@ fn bad_libraries() {
 fn mangled_sequencing_files() {
     let o = scratch("ms_o");
     for (name, seq, needle) in [
-        ("ragged", "ID,bin_0,bin_1,bin_2\nc0,5,10\n", "columns"),
-        ("extra_col", "ID,bin_0,bin_1,bin_2\nc0,5,10,15,20\n", "columns"),
-        ("text_count", "ID,bin_0,bin_1,bin_2\nc0,5,ten,15\n", "not a number"),
-        ("negative", "ID,bin_0,bin_1,bin_2\nc0,5,-10,15\n", "non-negative"),
-        ("nan", "ID,bin_0,bin_1,bin_2\nc0,5,NaN,15\n", "non-negative"),
+        ("ragged", "ID,bin_1,bin_2,bin_3\nc0,5,10\n", "columns"),
+        ("missing_bin", "ID,bin_1,bin_2,x\nc0,5,10,15\n", "bin_3"),
+        ("text_count", "ID,bin_1,bin_2,bin_3\nc0,5,ten,15\n", "not a number"),
+        ("negative", "ID,bin_1,bin_2,bin_3\nc0,5,-10,15\n", "non-negative"),
+        ("nan", "ID,bin_1,bin_2,bin_3\nc0,5,NaN,15\n", "non-negative"),
         ("empty", "", "no sequencing data"),
-        ("header_only", "ID,bin_0,bin_1,bin_2\n", "no sequencing data"),
+        ("header_only", "ID,bin_1,bin_2,bin_3\n", "no sequencing data"),
         ("binary_junk", "\u{0}\u{1}\u{2}\n\u{ff}\n", "columns"),
     ] {
         let d = data_dir(&format!("seq_{name}"), CELLS, seq);
@@ -146,14 +146,34 @@ fn mangled_sequencing_files() {
 }
 
 #[test]
+fn extra_sequencing_columns_are_ignored() {
+    let o = scratch("extra_o");
+    let base = run(&infer_args(&data_dir("extra_base", CELLS, SEQ), &o, &[]));
+    assert!(base.status.success());
+    let base_res = fs::read_to_string(o.join("results.csv")).unwrap();
+    // extra columns before, between and after the bin columns, and bins out of order
+    let seq = "ID,note,bin_2,x,bin_1,bin_3,y\nc0,a,10,9,5,15,z\nc1,b,2,9,1,3,z\n";
+    let o2 = scratch("extra_o2");
+    let r = run(&infer_args(&data_dir("extra", CELLS, seq), &o2, &[]));
+    assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
+    assert_eq!(fs::read_to_string(o2.join("results.csv")).unwrap(), base_res);
+    // ID column need not come first either
+    let seq = "bin_3,bin_1,note,ID,bin_2\n15,5,a,c0,10\n3,1,b,c1,2\n";
+    let o3 = scratch("extra_o3");
+    let r = run(&infer_args(&data_dir("extra_id", CELLS, seq), &o3, &[]));
+    assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
+    assert_eq!(fs::read_to_string(o3.join("results.csv")).unwrap(), base_res);
+}
+
+#[test]
 fn mangled_cells_files() {
     let o = scratch("mc_o");
     for (name, cells, needle) in [
         ("empty", "", "empty"),
-        ("header_only", "bin_0,bin_1,bin_2\n", "empty"),
-        ("text", "bin_0,bin_1,bin_2\n1,two,3\n", "not a number"),
-        ("negative", "bin_0,bin_1,bin_2\n1,-2,3\n", "non-negative"),
-        ("wrong_len", "bin_0,bin_1\n1,2\n", "columns"),
+        ("header_only", "bin_1,bin_2,bin_3\n", "empty"),
+        ("text", "bin_1,bin_2,bin_3\n1,two,3\n", "not a number"),
+        ("negative", "bin_1,bin_2,bin_3\n1,-2,3\n", "non-negative"),
+        ("wrong_len", "bin_1,bin_2\n1,2\n", "more bin columns"),
     ] {
         let d = data_dir(&format!("cells_{name}"), cells, SEQ);
         fails(&infer_args(&d, &o, &[]), needle);
@@ -185,8 +205,8 @@ fn unknown_command_and_help() {
 #[test]
 fn degenerate_but_valid_data_does_not_panic() {
     // constructs with zero reads, a single occupied bin, and all-zero cell bins
-    let seq = "ID,bin_0,bin_1,bin_2\nzero,0,0,0\nsingle,0,40,0\nlast,0,0,9\nfirst,7,0,0\n";
-    for (name, cells) in [("deg", CELLS), ("deg0", "bin_0,bin_1,bin_2\n0,0,0\n")] {
+    let seq = "ID,bin_1,bin_2,bin_3\nzero,0,0,0\nsingle,0,40,0\nlast,0,0,9\nfirst,7,0,0\n";
+    for (name, cells) in [("deg", CELLS), ("deg0", "bin_1,bin_2,bin_3\n0,0,0\n")] {
         let d = data_dir(name, cells, seq);
         let o = scratch(&format!("{name}_o"));
         let r = run(&infer_args(&d, &o, &[]));
